@@ -1,26 +1,70 @@
+# OpenCode / AI agents — local workspace state + machine-specific config
+# (opencode.json holds absolute paths + API tokens, never commit it;
+# share sanitized copies under config-examples/ instead)
+.opencode/
+opencode.json
+opencode.jsonc
+.claude/
+.cursor/
+
+# MCP clients — local overrides with absolute paths / secrets
+# (config-examples/ stays tracked as a sanitized template)
+.mcp.json
+mcp.json
+claude_desktop_config.json
+!config-examples/.mcp.json
+!config-examples/claude_desktop_config.json
+
 # Python
 __pycache__/
 *.py[cod]
 *.egg-info/
-.Python
+.eggs/
+*.egg
+build/
+dist/
 
 # Virtual environments
 venv/
 .venv/
 env/
+.venv*/
 
 # Secrets — NEVER commit Chartink cookies or any credentials
 cookies.txt
 *.cookies
 .env
+.env.*
+!.env.example
 secrets*
+credentials*.json
+*.pem
+*.key
 
-# Data / cache (backtest price caches, CSV exports)
+# Python caches / test / coverage
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+.Python
+
+# Data / cache (backtest price caches, CSV exports, local runs)
 *.pkl
 *.csv
+*.log
+*.jsonl
+.chartink-mcp/
 
-# OS / editor
+# OS / editor / temp
 .DS_Store
+Thumbs.db
 .idea/
 .vscode/
 *.swp
+*~
+*.tmp
+*.bak
+*.orig
