@@ -6,35 +6,54 @@ You describe a strategy in plain English, the agent writes the Chartink **scan c
 
 > Bundled with a **`chartink-query` skill** (see [`skills/`](skills/)) that teaches the agent the full Chartink scan-clause syntax — every indicator, function, and gotcha — so it writes correct queries on the first try.
 
+> **Attribution:** This is a personally enhanced fork of the original **Chartink MCP Server** by **Parthiv Shah** — original source: `https://github.com/shahparthiv/chartink-mcp`. The original 5-tool server and `chartink-query` skill are the original author's work. Extended 21-tool coverage, reliability fixes, MCP SDK v2 / OpenCode V2 migration, and other changes here are personal modifications on top. All credit for the original work goes to the original author.
+
 ---
 
 ## Features
 
 | Tool | What it does |
 |------|--------------|
-| `set_cookies` | Authenticate using your Chartink browser session cookies. |
-| `run_screener` | Run a scan clause and return matching stocks (`/screener/process`). |
-| `run_multiple_screeners` | Run several scan clauses in one call (compare strategies). |
-| `run_backtest` | Run a scan clause through Chartink's `/backtest/process` endpoint. |
-| `run_saved_screener` | Fetch a public saved screener by its URL slug and run it. |
+| `set_cookies` | Authenticate (saved to disk, survives restarts). |
+| `server_status` | Health check: site, cookies age, premium. No scan consumed. |
+| `list_indicators` | Valid clause vocabulary cheat-sheet (no login). |
+| `validate_scan` | Static + live 1-row validation for a clause. |
+| `search_screeners` | Search curated catalog (~111 scans, no login). |
+| `search_all_screeners` | Full-text search over all public scans, paginated (no login). |
+| `browse_catalog` | Browse `top_loved` + curated groups (no login). |
+| `get_screener_details` | Full metadata for one scan without running it (no login). |
+| `list_user_scans` | Public scans by one user, optional clauses (no login). |
+| `list_segments` | Runnable universes for the `segment` param (no login). |
+| `get_fundamentals` | Snapshot + quarterly/yearly/balance/cash-flow tables (no login). |
+| `run_screener` | Run a clause (`segment`, `sort_by`, `min_price`, `csv`; validated before run). |
+| `run_multiple_screeners` | Run several clauses in one call. |
+| `compare_screeners` | Run 2+ clauses, overlap + uniques join. |
+| `run_backtest` | Current backtest matches (latest-candle snapshot + as-of date). |
+| `backtest_summary` | Backtest time-series summary per sector + trend. |
+| `run_saved_screener` | Fetch public scan by slug/URL and run it (metadata + stocks). |
+| `scan_history` | Local log of past runs (recall + re-run). |
+| `list_my_scans` | Your dashboard scans (login). |
+| `list_alerts` | Your alerts (login + premium). |
+| `list_watchlists` | Your watchlists; names feed `segment` (login). |
 
 ---
 
 ## Requirements
 
-- **Python 3.10+** (developed on 3.11) — required by the `mcp` package; your system's default `python3` may be older, see [Installation](#installation)
+- **Python 3.11** (3.10+ minimum; developed and tested on 3.11.11) — required by the `mcp` package; your system's default `python3` may be older, see [Installation](#installation)
+- **`mcp>=2,<3` (currently 2.2.0)** — this server uses the MCP Python SDK v2 lowlevel API (`Server` with `on_list_tools` / `on_call_tool`, `ListToolsResult` / `CallToolResult`). v1 (`@app.list_tools()`, `mcp<2`) is no longer supported.
 - A **Chartink account** (free works for most scans; some features need premium)
-- An MCP-compatible client: **Claude Desktop**, **Claude Code**, or any agent that speaks MCP over stdio
+- An MCP-compatible client: **Claude Desktop**, **Claude Code**, **OpenCode V2**, or any agent that speaks MCP over stdio
 
 ---
 
 ## Installation
 
-> ⚠️ **Check your Python version first.** The `mcp` package requires **Python 3.10+**. On many machines the default `python3` is older (e.g. macOS ships 3.9), and `pip install mcp` will fail with a dependency/`SyntaxError`. Verify:
+> ⚠️ **Check your Python version first.** The `mcp` v2 package requires **Python 3.10+** (use 3.11). On many machines the default `python3` is older (e.g. macOS ships 3.9), and install will fail. Verify:
 > ```bash
-> python3 --version        # must be 3.10 or newer
+> python3 --version        # must be 3.10 or newer, 3.11 recommended
 > ```
-> If it's older, use one of the options below to get a 3.10+ interpreter.
+> If it's older, use one of the options below to get a suitable interpreter.
 
 ```bash
 # 1. Clone
@@ -61,12 +80,22 @@ source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-Dependencies (`requirements.txt`): `mcp`, `requests`, `beautifulsoup4`.
+Dependencies (`requirements.txt`): `mcp>=2,<3`, `requests`, `beautifulsoup4`.
 
 **Verify the install:**
 ```bash
-venv/bin/python --version                       # should print 3.10+
+venv/bin/python --version                       # should print 3.11.x
+venv/bin/python -c "import importlib.metadata as m; print(m.version('mcp'))"  # should print 2.x
 venv/bin/python -c "import server; print('OK')"  # deps load, server importable
+venv/bin/python -c "import asyncio, server; print(len(asyncio.run(server._get_tools())), 'tools')"  # should print 21 tools
+```
+
+If you previously installed with `mcp<2`, recreate the venv cleanly — do not mix v1/v2 installs (a mixed `mcp 1.x` + `mcp-types 2.x` + `httpx2` tree will break startup):
+
+```bash
+rm -rf venv
+uv venv venv --python 3.11
+uv pip install --python venv/bin/python -r requirements.txt
 ```
 
 Note the **absolute path** to the venv's Python and to `server.py` — you'll need them for the client config:
@@ -81,6 +110,29 @@ echo "$(pwd)/server.py"         # → args[0]
 ## Configuration
 
 The server runs over **stdio**. Point your MCP client at the venv Python + `server.py`. Ready-to-edit templates live in [`config-examples/`](config-examples/).
+
+> **OpenCode V2 note:** servers live under `mcp.servers` (not `mcp.<name>` directly). Do not use an `enabled` field — V2 uses `disabled: true` to turn a server off, otherwise omit it. A legacy `mcp.<name>` + `enabled: true` file may still load via compat, but migrate to the shape below.
+
+### OpenCode V2 (`opencode.json`)
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "chartink": {
+        "type": "local",
+        "command": [
+          "/absolute/path/to/chartink-mcp/venv/bin/python",
+          "/absolute/path/to/chartink-mcp/server.py"
+        ]
+      }
+    }
+  }
+}
+```
+
+Verify with `opencode mcp list` — `chartink` should show `connected`. If it shows `failed: MCP error -32000: Connection closed`, the process exited before handshake: check the venv path, `py_compile`, and `mcp` version (see [Troubleshooting](#troubleshooting)).
 
 ### Claude Desktop
 
@@ -147,6 +199,12 @@ Chartink's scan endpoints need a valid session, so you pass it your browser cook
 
 Cookies live for the duration of the server process. Re-run `set_cookies` if requests start failing (session expired).
 
+Session persistence (no credentials needed at startup):
+
+- Cookies are saved to `~/.chartink-mcp/session.json` (`0600`, best-effort) and restored on restart if fresh (2h TTL matching `ci_session`).
+- Run history is appended to `~/.chartink-mcp/history.jsonl` (used by `scan_history`).
+- `server_status` reports `cookies_present`, `cookie_age_seconds`, and `cookies_loaded_from_disk` without running a scan. Missing cookies only limit `run_*` tools — `list_*`, `search_*`, `get_fundamentals`, and `validate_scan --dry_run=false` work logged-out.
+
 > ⚠️ **Never commit your cookies.** They are credentials. The `.gitignore` already excludes common secret/cache files, but treat the cookie string like a password.
 
 ---
@@ -162,7 +220,15 @@ Once configured and authenticated, just talk to the agent:
 
 > "Run the saved screener `short-term-breakouts`."
 
+> "Search for RSI breakout scans, show me the options."
+
+> "Who created `short-term-breakouts`? Show details before running."
+
+> "List public scans by user `@admin`."
+
 > "Compare two strategies: an RSI breakout vs a MACD crossover."
+
+Recommended flow for other users' scans: `search_screeners` (or `list_user_scans`) → `get_screener_details` to confirm the exact slug/URL/author → `run_saved_screener` to execute. Slugs/URLs are unique — never rely on names alone, since many scans share the same name.
 
 The agent writes the scan clause (using the bundled skill), the server runs it, and you get the stock list back.
 
@@ -201,6 +267,14 @@ Then just ask: *"write a chartink query for stocks breaking a 20-day high with a
 
 ---
 
+## v2 notes (MCP SDK 2.x + OpenCode V2)
+
+- Server implements MCP Python SDK **v2 lowlevel `Server`** (`on_list_tools` / `on_call_tool`, `ListToolsResult` / `CallToolResult`, `input_schema`). Requires `mcp>=2,<3`.
+- OpenCode config uses **`mcp.servers.chartink`** without `enabled`. Use `opencode mcp list` to confirm `connected`.
+- No env vars or credentials are required at startup. Auth is runtime-only via `set_cookies`; state lives in `~/.chartink-mcp/`.
+
+---
+
 ## Project structure
 
 ```
@@ -222,12 +296,17 @@ chartink-mcp/
 
 | Symptom | Fix |
 |---------|-----|
-| `pip install` fails on `mcp` / `SyntaxError` during install | Your Python is < 3.10. Build the venv with a 3.10+ interpreter (`python3.11 -m venv venv`) or use the `uv` option in [Installation](#installation). |
-| Tools don't appear in the client | Check the absolute paths in the config; restart the client (Claude Desktop must be fully quit & reopened). |
+| `pip install` fails on `mcp` / `SyntaxError` during install | Your Python is < 3.10. Build the venv with 3.11 (`uv venv venv --python 3.11`) or use the `uv` option in [Installation](#installation). |
+| `MCP error -32000: Connection closed` on startup | The stdio process exited before handshake. Check: (1) absolute `venv/bin/python` + `server.py` paths exist, (2) `venv/bin/python -m py_compile server.py` passes, (3) `mcp` is v2 (`venv/bin/python -c "import importlib.metadata as m; print(m.version('mcp'))"` → `2.x`). A mixed `mcp 1.x` + `mcp-types 2.x` tree means a partial upgrade — recreate the venv cleanly. |
+| `ModuleNotFoundError: No module named 'mcp.server.fastmcp'` | v1 code running against `mcp 2.x` (`FastMCP` was renamed to `MCPServer`). This repo is already on v2; if you see this in another server, pin that server to `mcp<2` or migrate it to `from mcp.server.mcpserver import MCPServer`. |
+| `AttributeError: 'Server' object has no attribute 'list_tools'` / `'Tool' object has no attribute 'inputSchema'` | v1 lowlevel API. v2 uses `Server(..., on_list_tools=..., on_call_tool=...)`, returns `ListToolsResult` / `CallToolResult`, and snake_case attribute access (`tool.input_schema`). |
+| Tools don't appear in the client | Check the absolute paths in the config; for OpenCode V2 confirm `mcp.servers.chartink` shape and run `opencode mcp list`. Restart the client (Claude Desktop must be fully quit & reopened). |
 | `XSRF-TOKEN not found` / `are you logged in?` | Re-run `set_cookies` with a fresh cookie string from a logged-in browser. |
-| Requests suddenly fail | Session expired — set cookies again. |
+| Requests suddenly fail | Session expired — set cookies again. Check `server_status` (`cookie_age_seconds`, `cookies_loaded_from_disk`). |
 | `run_saved_screener` says "Could not extract scan_clause" | That scan is **private** (its clause isn't in the public page). Ask the owner for the clause and use `run_screener` instead. |
 | `run_backtest` returns empty | Chartink's full target/stop backtest is a website/premium feature; the endpoint may not return rich data via API. Use the website's Backtest tab for performance stats. |
+
+> **Never commit secrets.** Cookie strings, `session.json`, and any `Authorization` headers are credentials. Keep them out of git and out of shared config files (use `{env:VAR}` references where the client supports it).
 
 ---
 
@@ -243,4 +322,6 @@ Issues and PRs welcome. Ideas: caching, richer backtest parsing, more example sk
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — original work Copyright (c) 2026 Parthiv Shah.
+
+Licensing requirements for this MIT-licensed fork: you may use, copy, modify, merge, publish, distribute, sublicense, and sell this software, provided you retain the original copyright notice and permission notice (`LICENSE`) in all copies or substantial portions. No copyleft or disclosure obligation for your own modifications beyond that; the software is provided "AS IS" without warranty. See `LICENSE` for the full text.
