@@ -1,12 +1,13 @@
 # Chartink MCP Server
 
+> **Original work by [Parthiv Shah](https://github.com/shahparthiv)** — forked from [**shahparthiv/chartink-mcp**](https://github.com/shahparthiv/chartink-mcp).
+> The original 5-tool server and `chartink-query` skill are the original author's work. Extended 21-tool coverage, reliability fixes, and MCP SDK v2 / OpenCode V2 migration here are modifications on top.
+
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io) server that lets Claude — or any MCP-compatible AI agent — run **[Chartink](https://chartink.com) stock screeners and backtests** for the Indian (NSE/BSE) market directly from a chat.
 
 You describe a strategy in plain English, the agent writes the Chartink **scan clause**, and this server runs it against Chartink and returns the matching stocks.
 
 > Bundled with a **`chartink-query` skill** (see [`skills/`](skills/)) that teaches the agent the full Chartink scan-clause syntax — every indicator, function, and gotcha — so it writes correct queries on the first try.
-
-> **Attribution:** This is a personally enhanced fork of the original **Chartink MCP Server** by **Parthiv Shah** — original source: `https://github.com/shahparthiv/chartink-mcp`. The original 5-tool server and `chartink-query` skill are the original author's work. Extended 21-tool coverage, reliability fixes, MCP SDK v2 / OpenCode V2 migration, and other changes here are personal modifications on top. All credit for the original work goes to the original author.
 
 ---
 
